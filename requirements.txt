@@ -1,0 +1,39 @@
+# ============================================================
+# HMDA Big Data ML Project — Requirements
+# ============================================================
+# Setup:
+#   python3 -m venv hmda_venv
+#   source hmda_venv/bin/activate
+#   pip install -r requirements.txt
+#   python -m ipykernel install --user --name=hmda_venv --display-name "HMDA BigData"
+# ============================================================
+
+# --- Core: Distributed Computing & Notebook Environment ---
+pyspark>=3.5,<4.0       # Distributed data processing & MLlib (pinned to 3.x — 4.x has breaking API changes)
+jupyter                  # Notebook interface for running pipeline step-by-step
+notebook                 # Jupyter Notebook server
+ipykernel                # Registers venv as a selectable Jupyter kernel
+
+# --- Data Processing ---
+pandas                   # Single-node DataFrames for EDA, Tableau exports, and sklearn prep
+numpy                    # Numerical operations, bootstrap confidence intervals
+pyarrow                  # Parquet read/write + Spark Arrow optimization for toPandas()
+
+# --- Machine Learning ---
+scikit-learn             # Single-node SVM baseline, metrics (classification_report, roc_auc_score)
+
+# --- Visualization (inline notebook plots) ---
+matplotlib               # ROC curves, feature importance bar charts, scaling plots
+seaborn                  # Confusion matrix heatmaps, distribution plots for EDA
+
+# --- Configuration ---
+pyyaml                   # Parse spark_config.yaml for SparkSession setup
+
+# --- Profiling & Monitoring ---
+psutil                   # Memory/CPU tracking in performance_profiler.py
+
+# --- Testing ---
+pytest                   # Unit tests for schema validation, data leakage checks
+
+# --- Utility ---
+tqdm                     # Progress bars for long-running operations

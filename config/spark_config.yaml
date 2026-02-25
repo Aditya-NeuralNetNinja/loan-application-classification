@@ -1,0 +1,22 @@
+spark:
+  app_name: "HMDA_Mortgage_Analysis"
+  master: "local[*]"          # local mode; change to yarn/k8s for cluster
+  config:
+    spark.driver.memory: "8g"
+    spark.executor.memory: "4g"
+    spark.executor.cores: 4
+    spark.sql.shuffle.partitions: 200
+    spark.serializer: "org.apache.spark.serializer.KryoSerializer"
+    spark.sql.adaptive.enabled: true          # Adaptive Query Execution
+    spark.sql.adaptive.coalescePartitions.enabled: true
+
+data:
+  raw_path: "data/raw/hmda_2023.csv"
+  parquet_path: "data/processed/hmda_2023.parquet"
+  partitioning_columns: ["state_code", "action_taken"]
+
+model:
+  target_column: "action_taken"
+  test_size: 0.2
+  validation_size: 0.1
+  random_seed: 42
