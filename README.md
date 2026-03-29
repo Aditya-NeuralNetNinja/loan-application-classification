@@ -2,7 +2,7 @@
 
 A distributed machine learning pipeline for predicting mortgage loan approval/denial using the **HMDA 2023 Snapshot National Loan-Level Dataset** (10M+ records, 99 features, ~4 GB).
 
-Built with **PySpark MLlib** for scalable processing and **Tableau** for interactive visualization.
+Built with **PySpark MLlib** for scalable processing, a **FastAPI + Streamlit** deployment layer, and **Tableau** for interactive visualization.
 
 ---
 
@@ -33,7 +33,11 @@ csv_path = hf_hub_download(
 
 > **Note:** Replace `adi-123` with the actual Hugging Face username if different.
 
-Alternatively, download directly from the [CFPB website](https://ffiec.cfpb.gov/data-publication/snapshot-national-loan-level-dataset/2023) and place in `data/raw/`.
+Alternatively, download directly from the [CFPB website](https://ffiec.cfpb.gov/data-publication/snapshot-national-loan-level-dataset/2023) and place in `data/raw/`, or use the provided download script:
+
+```bash
+bash scripts/download_data.sh
+```
 
 ---
 
@@ -41,100 +45,128 @@ Alternatively, download directly from the [CFPB website](https://ffiec.cfpb.gov/
 
 ```
 project/
-├── .gitignore
 ├── README.md
-├── requirements.txt
+├── DEPLOYMENT.md                    # Deployment guide (Streamlit, Docker, Railway, Render)
+├── requirements.txt                 # Full dev dependencies
+├── requirements.deploy.txt          # Lightweight deploy dependencies
+├── Dockerfile                       # Container deployment
+├── .dockerignore
+├── Procfile                         # Heroku/Render process entry
+├── render.yaml                      # Render blueprint
+├── railway.json                     # Railway deployment config
+├── runtime.txt                      # Python version pin (3.11.9)
 ├── config/
-│   ├── spark_config.yaml          # SparkSession configuration
-│   └── tableau_config.json        # Tableau export settings
+│   ├── spark_config.yaml            # SparkSession configuration
+│   └── tableau_config.json          # Tableau export settings
 ├── data/
-│   ├── raw/                       # Original CSV (gitignored)
-│   ├── processed/                 # Parquet + EDA outputs (gitignored)
+│   ├── raw/                         # Original CSV (gitignored)
+│   ├── processed/                   # Parquet, model artifacts, JSON results
+│   │   ├── hmda_2023.parquet/       # State-partitioned Parquet dataset
+│   │   ├── pipeline_model/          # Fitted PySpark PipelineModel (Imputer → Indexers → OHE → Assembler → Scaler)
+│   │   ├── models/                  # Trained model artifacts (best_lr, best_rf, best_gbt, best_dt)
+│   │   ├── model_results.json       # Final evaluation metrics for all models
+│   │   ├── feature_metadata.json    # Feature names, types, pipeline contract
+│   │   └── optimal_threshold.json   # F1-optimized classification threshold
 │   └── schemas/
-│       └── hmda_schema.json       # 99-column schema with validation rules
+│       └── hmda_schema.json         # 99-column schema with validation rules
 ├── notebooks/
-│   ├── 1_data_ingestion.ipynb     # CSV → Parquet, schema validation
-│   ├── 2_eda_comprehensive.ipynb  # Full EDA on all 99 features
-│   ├── 3_feature_engineering.ipynb # Pipeline: Imputer → Encoder → Scaler
-│   └── 4_model_training.ipynb     # LR, RF, GBT, SVM + evaluation
+│   ├── 1_data_ingestion.ipynb       # CSV → Parquet, schema validation, null analysis
+│   ├── 2_eda_comprehensive.ipynb    # Full EDA: univariate, bivariate, fair lending, leakage audit
+│   ├── 3_feature_engineering.ipynb  # Pipeline: Imputer → StringIndexer → OHE → VectorAssembler → Scaler
+│   ├── 4a_model_training.ipynb      # 8 models: Baseline, NB, LR, SVM, DT, RF, GBT, MLP
+│   ├── 4b_ensembles_evaluation.ipynb # Ensembles, head-to-head comparison, threshold optimization
+│   └── 5_model_diagnostics_deepdive.ipynb # Bootstrap CIs, error analysis, scaling experiments, deployment reco
 ├── scripts/
-│   ├── run_pipeline.py            # End-to-end execution script
-│   └── performance_profiler.py    # CPU/memory tracking
-├── tableau/
-│   ├── dashboard1.twbx            # Data Quality
-│   ├── dashboard2.twbx            # Model Performance
-│   ├── dashboard3.twbx            # Fair Lending
-│   └── dashboard4.twbx            # Scalability
-└── tests/
-    └── test_pipeline.py           # Schema & leakage checks
+│   ├── download_data.sh             # Download HMDA LAR/TS/Panel CSVs from CFPB S3
+│   └── prepare_deploy_artifacts.py  # Copy processed artifacts into app/assets for deployment
+├── app/
+│   ├── streamlit_app.py             # Interactive dashboard: leaderboard, threshold policy, CSV inference
+│   ├── api.py                       # FastAPI service: /models, /recommend, /inference endpoints
+│   ├── data_loader.py               # Shared artifact loading, recommendation logic, business cost table
+│   ├── inference.py                 # Spark preprocessing + GBT batch inference backend
+│   ├── config.py                    # App configuration
+│   ├── entrypoint.sh                # Starts API or Streamlit via APP_MODE env var
+│   └── assets/                      # Committed lightweight sample artifacts for demo mode
+│       ├── model_results.sample.json
+│       ├── model_leaderboard.sample.csv
+│       ├── optimal_threshold.sample.json
+│       └── demo_inference_100_rows.csv
+└── tableau/
+    ├── dashboard1.twbx              # Data Quality
+    ├── dashboard2.twbx              # Model Performance
+    ├── dashboard3.twbx              # Fair Lending
+    └── dashboard4.twbx              # Scalability
 ```
 
 ---
 
-## Progress
+## Pipeline Overview
 
-### Completed
+### Notebook 1 — Data Ingestion
+- SparkSession with AQE, Arrow optimization, Kryo serialization
+- CSV load with corrupt record detection (PERMISSIVE mode)
+- Schema validation against `hmda_schema.json`
+- Null/missing analysis across all 99 columns (nulls + "Exempt"/"NA" codes)
+- Target variable distribution analysis
+- CSV → Parquet conversion with `state_code` partitioning (75% compression)
 
-- [x] **Environment Setup** — Java 17, Python venv, PySpark 3.5, Jupyter kernel
-- [x] **Schema Definition** — All 99 HMDA columns categorized into 15 groups with dtype classifications, leakage flags, and CFPB data dictionary mapping
-- [x] **Notebook 1: Data Ingestion**
-  - SparkSession with AQE, Arrow optimization, Kryo serialization
-  - CSV load with corrupt record detection (PERMISSIVE mode)
-  - Schema validation against `hmda_schema.json`
-  - Null/missing analysis across all 99 columns (nulls + "Exempt"/"NA" codes)
-  - Target variable distribution analysis
-  - CSV → Parquet conversion with `state_code` partitioning (75% compression)
-  - Initial profile export for downstream notebooks
-- [x] **Notebook 2: Comprehensive EDA** (33 cells)
-  - Univariate analysis: numeric distributions, skewness, kurtosis, IQR outlier detection
-  - Univariate analysis: categorical cardinality, value counts, near-zero variance detection
-  - Bivariate analysis: each feature vs. denial (t-tests, chi-square, Cramer's V)
-  - Fair lending analysis: denial rates by race, ethnicity, sex
-  - Pearson correlation matrix with multicollinearity detection
-  - Missing value pattern analysis (MCAR/MAR/MNAR classification)
-  - Data leakage audit (empirical verification of 12 leakage columns)
-  - Feature engineering recommendations summary
-- [x] **Dataset Upload** — CSV and Parquet hosted on Hugging Face
-- [x] **Git Setup** — Repository with `.gitignore` (data files excluded)
+### Notebook 2 — Comprehensive EDA
+- Univariate analysis: numeric distributions, skewness, kurtosis, IQR outlier detection
+- Univariate analysis: categorical cardinality, value counts, near-zero variance detection
+- Bivariate analysis: each feature vs. denial (t-tests, chi-square, Cramer's V)
+- Fair lending analysis: denial rates by race, ethnicity, sex
+- Pearson correlation matrix with multicollinearity detection
+- Missing value pattern analysis (MCAR/MAR/MNAR classification)
+- Data leakage audit (empirical verification of 12 leakage columns)
 
-### In Progress
+### Notebook 3 — Feature Engineering
+- Column name normalization and useless/dangerous column removal
+- Target encoding: `action_taken` → binary label (Originated=0, Denied=1)
+- HMDA triple-missing normalization ("Exempt", "NA", null → unified handling)
+- Numeric transformations: log transforms for right-skewed features
+- PySpark ML Pipeline: Imputer → StringIndexer → OneHotEncoder → VectorAssembler → StandardScaler
+- Stratified train/test split (80/20) with post-pipeline quality checks
 
-- [ ] **Notebook 3: Feature Engineering**
-  - Target encoding: `action_taken` → binary label (1→0, 3→1)
-  - Missing value imputation (median for numeric, "Exempt" category for categorical)
-  - Log transformation for right-skewed features (loan_amount, income, property_value)
-  - Domain features: loan-to-income ratio, DTI buckets, high-cost flag, joint application indicator
-  - PySpark ML Pipeline: StringIndexer → OneHotEncoder → VectorAssembler → StandardScaler
-  - Custom Transformer: LoanRiskScorer
-  - Stratified train/test split (80/20)
+### Notebook 4a — Model Training & Tuning
+Eight models trained with class-weight handling and cross-validation:
+1. **Majority-Class Baseline** — naive classifier for reference
+2. **Naive Bayes** — simplest probabilistic classifier
+3. **Logistic Regression** — linear baseline with regParam/elasticNetParam grid
+4. **Linear SVM** — maximum margin classification
+5. **Decision Tree** — interpretable if-then rules
+6. **Random Forest** — variance reduction via bagging
+7. **Gradient Boosted Trees** — tabular data champion
+8. **Multilayer Perceptron (MLP)** — neural network on tabular data
 
-### Planned
+### Notebook 4b — Ensembles & Evaluation
+- Ensemble engineering: model combination strategies
+- Comprehensive head-to-head comparison across all models
+- F1-optimized threshold selection
+- MLflow hyperparameter analysis
+- Dataset-specific performance analysis
 
-- [ ] **Notebook 4: Model Training & Evaluation**
-  - Logistic Regression (CrossValidator with regParam/elasticNetParam grid)
-  - Random Forest (numTrees/maxDepth tuning)
-  - Gradient Boosted Trees (maxDepth/stepSize optimization)
-  - SVM via scikit-learn (1% sample for scalability comparison)
-  - Bootstrap confidence intervals (1000 iterations)
-  - Feature importance analysis (top 15 features)
-  - Scalability analysis: strong scaling (50/100/200/400 partitions)
-- [ ] **Tableau Dashboards**
-  - Dashboard 1: Data Quality (missing values heatmap, class distribution, state map)
-  - Dashboard 2: Model Performance (ROC curves, confusion matrix, metric comparison)
-  - Dashboard 3: Fair Lending (denial rates by demographics, geographic approval heatmap)
-  - Dashboard 4: Scalability (training time vs. data size, executor slider)
-- [ ] **Testing** — Schema validation tests, data leakage checks, pipeline integration tests
+### Notebook 5 — Model Diagnostics Deep Dive
+- Bootstrap confidence intervals (uncertainty quantification)
+- Residual and error analysis
+- Business-oriented evaluation metrics (cost modeling)
+- Strong and weak scaling experiments
+- Evidence-based deployment recommendation
 
 ---
 
 ## ML Approach
 
-| Algorithm | Why | Implementation |
-|-----------|-----|----------------|
-| **Logistic Regression** | Interpretable baseline, coefficient analysis | PySpark MLlib |
-| **Random Forest** | Feature importance, handles non-linearity | PySpark MLlib |
-| **Gradient Boosted Trees** | Best predictive performance expected | PySpark MLlib |
-| **SVM (Linear)** | scikit-learn comparison on sampled data | scikit-learn |
+| Algorithm | Implementation | Purpose |
+|-----------|---------------|---------|
+| **Majority-Class Baseline** | PySpark | Naive reference point |
+| **Naive Bayes** | PySpark MLlib | Probabilistic baseline |
+| **Logistic Regression** | PySpark MLlib | Interpretable linear model |
+| **Linear SVM** | PySpark MLlib | Maximum margin classifier |
+| **Decision Tree** | PySpark MLlib | Interpretable non-linear model |
+| **Random Forest** | PySpark MLlib | Bagged ensemble, feature importance |
+| **Gradient Boosted Trees** | PySpark MLlib | Best expected performance |
+| **Multilayer Perceptron** | PySpark MLlib | Neural network comparison |
+| **Ensembles** | Custom (4b) | Combined model strategies |
 
 **Target:** Binary classification — Originated (0) vs. Denied (1)
 
@@ -146,10 +178,40 @@ project/
 
 ---
 
+## Deployment
+
+The project includes a full deployment layer. See [DEPLOYMENT.md](DEPLOYMENT.md) for details.
+
+### Streamlit Dashboard
+```bash
+pip install -r requirements.deploy.txt
+streamlit run app/streamlit_app.py
+```
+Features: model leaderboard, threshold policy selector, business cost analysis, CSV upload for batch inference.
+
+### FastAPI Service
+```bash
+uvicorn app.api:app --host 0.0.0.0 --port 8000
+```
+Endpoints: `/models`, `/recommend`, `/inference/predict-csv`, `/health`
+
+### Docker
+```bash
+docker build -t hmda-deploy .
+docker run -e APP_MODE=streamlit -e PORT=8000 -p 8000:8000 hmda-deploy
+```
+
+### Cloud Platforms
+- **Render**: `render.yaml` blueprint included
+- **Railway**: `railway.json` config included
+- **Heroku**: `Procfile` + `runtime.txt` included
+
+---
+
 ## Setup
 
 ### Prerequisites
-- Python 3.10+
+- Python 3.10+ (3.11.9 pinned for deployment)
 - Java 17 (for PySpark)
 
 ### Installation
@@ -169,7 +231,7 @@ pip install -r requirements.txt
 # Register Jupyter kernel
 python -m ipykernel install --user --name=hmda_venv --display-name "HMDA BigData"
 
-# Download dataset
+# Download dataset (option A: Hugging Face)
 python3 -c "
 from huggingface_hub import hf_hub_download
 import os
@@ -179,15 +241,18 @@ os.symlink(path, 'data/raw/hmda_2023.csv')
 print(f'Dataset ready at data/raw/hmda_2023.csv')
 "
 
+# Download dataset (option B: CFPB direct)
+bash scripts/download_data.sh
+
 # Launch Jupyter
 jupyter notebook
 ```
 
-Select the **"HMDA BigData"** kernel and run notebooks in order (1 → 2 → 3 → 4).
+Run notebooks in order: **1 → 2 → 3 → 4a → 4b → 5**.
 
 ---
 
-## Key Findings (Preliminary from EDA)
+## Key Findings (from EDA)
 
 - **Denial rates** vary significantly by demographic group, with minority applicants facing 2-3x higher denial rates
 - **Income, DTI ratio, and interest rate** show the strongest statistical differences between denied and originated applications
@@ -201,10 +266,27 @@ Select the **"HMDA BigData"** kernel and run notebooks in order (1 → 2 → 3 �
 
 - **Distributed Processing:** PySpark 3.5 (MLlib, SQL, DataFrame API)
 - **Data Format:** Apache Parquet with state-level partitioning
-- **ML:** PySpark MLlib + scikit-learn (SVM baseline)
+- **ML:** PySpark MLlib (8 model types + ensembles)
 - **Visualization:** Matplotlib, Seaborn, Tableau
-- **Statistical Testing:** SciPy (chi-square, t-tests, Cramer's V)
+- **Statistical Testing:** SciPy (chi-square, t-tests, Cramer's V, bootstrap CIs)
+- **Web App:** Streamlit (dashboard), FastAPI (API)
+- **Deployment:** Docker, Render, Railway, Heroku
 - **Dataset Hosting:** Hugging Face Datasets
+
+---
+
+## Saved Artifacts
+
+| Artifact | Path | Description |
+|----------|------|-------------|
+| Fitted Pipeline | `data/processed/pipeline_model/` | Imputer → 11 StringIndexers → OHE → Assembler → Scaler |
+| Best LR | `data/processed/models/best_lr/` | Logistic Regression model |
+| Best RF | `data/processed/models/best_rf/` | Random Forest model |
+| Best GBT | `data/processed/models/best_gbt/` | Gradient Boosted Trees model |
+| Best DT | `data/processed/models/best_dt/` | Decision Tree model |
+| Model Results | `data/processed/model_results.json` | Metrics for all models |
+| Feature Metadata | `data/processed/feature_metadata.json` | Pipeline feature contract |
+| Optimal Threshold | `data/processed/optimal_threshold.json` | F1-optimized threshold |
 
 ---
 
@@ -212,7 +294,7 @@ Select the **"HMDA BigData"** kernel and run notebooks in order (1 → 2 → 3 �
 
 | Member | Role |
 |--------|------|
-| Aditya | ML Pipeline, EDA, Feature Engineering |
+| Aditya | ML Pipeline, EDA, Feature Engineering, Deployment |
 
 ---
 
