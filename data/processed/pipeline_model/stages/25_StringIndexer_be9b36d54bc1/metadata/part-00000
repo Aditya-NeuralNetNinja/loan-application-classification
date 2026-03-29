@@ -1,0 +1,1 @@
+{"class":"org.apache.spark.ml.feature.StringIndexerModel","timestamp":1772367662167,"sparkVersion":"3.5.8","uid":"StringIndexer_be9b36d54bc1","paramMap":{"outputCol":"debt_to_income_ratio_idx","inputCol":"debt_to_income_ratio","handleInvalid":"keep"},"defaultParamMap":{"outputCol":"StringIndexer_be9b36d54bc1__output","handleInvalid":"error","stringOrderType":"frequencyDesc"}}

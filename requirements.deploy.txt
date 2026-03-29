@@ -1,0 +1,9 @@
+fastapi>=0.115,<1.0
+uvicorn[standard]>=0.30,<1.0
+python-multipart>=0.0.9
+streamlit>=1.40,<2.0
+pandas>=2.0
+numpy>=1.24
+matplotlib>=3.7
+seaborn>=0.13
+pyspark>=3.5,<4.0

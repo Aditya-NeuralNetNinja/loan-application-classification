@@ -4,11 +4,26 @@
 
 # --- Data files (too large for Git) ---
 data/raw/
-data/processed/
+data/processed/*
 data/samples/*.csv
 *.csv
 *.parquet
 *.pkl
+
+# --- Deployment sample assets (tracked) ---
+!app/assets/*.csv
+!app/assets/*.json
+
+# --- Deployable inference artifacts (tracked) ---
+!data/processed/feature_metadata.json
+!data/processed/optimal_threshold.json
+!data/processed/pipeline_model/
+!data/processed/pipeline_model/**
+!data/processed/models/
+!data/processed/models/best_gbt/
+!data/processed/models/best_gbt/**
+!data/processed/pipeline_model/**/*.parquet
+!data/processed/models/best_gbt/**/*.parquet
 
 # --- Python ---
 __pycache__/
@@ -36,6 +51,8 @@ models/
 
 # --- OS ---
 .DS_Store
+._*
+*.crc
 Thumbs.db
 
 

@@ -1,0 +1,9 @@
+services:
+  - type: web
+    name: hmda-model-dashboard
+    env: docker
+    plan: free
+    dockerfilePath: ./Dockerfile
+    envVars:
+      - key: APP_MODE
+        value: streamlit

@@ -1,0 +1,10 @@
+{
+  "tableau_public_url": "<your-tableau-public-link>",
+  "data_source": "data/processed/hmda_tableau_export.csv",
+  "dashboards": [
+    "Data Quality & Pipeline Monitoring",
+    "Model Performance & Feature Importance",
+    "Business Insights & Fair Lending",
+    "Scalability & Cost Analysis"
+  ]
+}

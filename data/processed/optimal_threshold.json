@@ -1,0 +1,7 @@
+{
+  "best_model": "E_B_WeightedVote_Top3",
+  "optimal_threshold_f1": 0.6200000000000001,
+  "optimal_precision": 0.992517941670484,
+  "optimal_recall": 0.9884929284736655,
+  "optimal_f1": 0.9905013460659319
+}
